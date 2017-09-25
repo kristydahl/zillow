@@ -24,9 +24,7 @@
     # Output as shapefile
     # Output as CSV
 
-# Split shapefiles of CI properties by county subdivision boundaries
-
-# Output year, projection, number of CI properties, total value of CI properties per county subdivision
+# Aggregate and Output year, projection, number of CI properties, total value of CI properties per county subdivision
     # Output as shapefile
     # Output as CSV
 
