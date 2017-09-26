@@ -5,6 +5,7 @@ import json
 import psycopg2
 import gc
 import codecs
+import datetime
 
 def connect_to_db():
     conn_string = "host='localhost' dbname='test_zillow' user='kristinadahl' password='latte4me'"
@@ -19,28 +20,96 @@ def connect_to_db():
     cursor = conn.cursor()
     print "Connected!\n"
 
-    # # execute our Query
-    # cursor.execute("SELECT name FROM users")
-    #
-    # # retrieve the records from the database
-    # records = cursor.fetchall()
-    #
-    # # access the column by numeric index:
-    # # even though we enabled columns by name I'm showing you this to
-    # # show that you can still access columns by index and iterate over them.
-    # print "Value 1, Row 1: ", records[0][0]
-    #
-    # # print the entire row
-    # print "Row 1:	", records[0]
-
 #def create_tables_in_db(state_numbers):
 
     return conn_string
 
+def create_tables(state_number):
+    conn_string = connect_to_db()
+
+    conn = psycopg2.connect(conn_string)
+    cursor = conn.cursor()
+
+    commands = (
+        """
+        CREATE TABLE state_{0}_ztrans_main (
+            trans_id BIGINT PRIMARY KEY NOT NULL,
+            fips TEXT NOT NULL,
+            loanratetypestndcode TEXT,
+            loanduedate DATE
+        ) WITH OIDS
+        """ .format(state_number),
+        """
+        CREATE TABLE state_{0}_ztrans_propinfo (
+            transid TEXT PRIMARY KEY NOT NULL,
+            importparcelid BIGINT NOT NULL,
+            propertyaddressunitdesignator TEXT,
+            propertyaddressunitnumber TEXT
+        ) WITH OIDS
+        """ .format(state_number),
+        """
+        CREATE TABLE state_{0}_zasmt_buildingarea (
+            rowid BIGINT PRIMARY KEY NOT NULL,
+            buildingareasqft BIGINT
+        ) WITH OIDS
+        """ .format(state_number),
+        """
+        CREATE TABLE state_{0}_zasmt_main (
+            rowid BIGINT PRIMARY KEY NOT NULL,
+            importparcelid BIGINT NOT NULL,
+            fips TEXT NOT NULL,
+            propertyfullstreetaddress TEXT,
+            propertycity TEXT,
+            propertystate TEXT,
+            propertyzip TEXT,
+            loadid BIGINT,
+            propertyaddresslatitude TEXT,
+            propertyaddresslongitude TEXT,
+            taxamount NUMERIC
+        ) WITH OIDS
+        """ .format(state_number),
+        """
+        CREATE TABLE state_{0}_zasmt_value (
+            rowid BIGINT PRIMARY KEY NOT NULL,
+            totalassessedvalue NUMERIC,
+            assessmentyear INT,
+            totalmarketvalue NUMERIC,
+            marketvalueyear INT,
+            totalappraisalvalue NUMERIC,
+            appraisalvalueyear INT
+        ) WITH OIDS
+        """ .format(state_number),
+        """
+        CREATE TABLE state_{0}_zasmt_building (
+            rowid BIGINT PRIMARY KEY NOT NULL,
+            noofunits INT,
+            buildingconditionstndcode TEXT,
+            foundationtypestndcode TEXT,
+            totalbedrooms INT,
+            propertylandusestndcode TEXT,
+            yearbuilt TEXT,
+            effectiveyearbuilt TEXT
+        ) WITH OIDS
+        """ .format(state_number)
+    )
+
+    for command in commands:
+        cursor.execute(command)
+        cursor.close
+        conn.commit()
 
 
-# this has the nan problem. and would probably have a memory problem, too, if it could get past the first line.
-def read_in_csv_data_in_chunks_and_insert_rows(filename):
+def check_if_field_is_null(fields):
+    for field in fields:
+        print 'checking ' + str(field)
+        if field in['', '\x00',' ']:
+            field = None
+            print str(field) + ' is empty'
+        else:
+            field = field
+            print str(field) + ' has data'
+
+def read_in_ztrans_main_csv_data_and_insert_rows(filename):
 
     # connect to db
     conn_string = connect_to_db()
@@ -53,47 +122,49 @@ def read_in_csv_data_in_chunks_and_insert_rows(filename):
         dtype='str')
     list_of_fips_codes = df_of_fips_codes['FIPS'].values.tolist()
 
-    chunksize = 10000
+    with open(filename) as infile:
+        for index, row in enumerate(infile):
+            split_row = row.split('|')
+            TransId = int(split_row[0])
+            FIPS = split_row[1]
+            LoanRateTypeStndCode = split_row[66]
+            LoanDueDate = split_row[67]
 
-    for chunk in pandas.read_csv(filename, chunksize=chunksize, delimiter='|'): # need to force data types--FIPS leading zero is getting stripped.
-        for index, row in chunk.iterrows():
-            TransId = row[0]
-            FIPS = row[1]
-            if str(row[66]) == 'nan':
-                LoanRateTypeStndCode = None
-            else:
-                LoanRateTypeStndCode = row[66]
+            fields = [LoanRateTypeStndCode, LoanDueDate]
 
-            if str(row[67]) == 'nan':
-                LoanDueDate = None
-            else:
-                LoanDueDate = row[67]
-            #LoanDueDate = row[67]
+            print fields
+            print 'checking fields'
+            check_if_field_is_null(fields)
 
-            print TransId
-            print FIPS
-            print LoanRateTypeStndCode
-            print LoanDueDate
+            print 'checked fields'
 
-            data = (TransId, FIPS, LoanRateTypeStndCode, LoanDueDate)
+            # if split_row[66] in['', '\x00',' ']:
+            #     LoanRateTypeStndCode = None
+            # else:
+            #     LoanRateTypeStndCode = split_row[66]
+            #
+            # if split_row[67] in['', '\x00',' ']:
+            #     LoanDueDate = None
+            # else:
+            #     LoanDueDate = split_row[67]
 
+            print 'Loan rate is: ' + LoanRateTypeStndCode
+            print 'Loan due is: ' + LoanDueDate
+
+            print 'Inserting rows'
             if FIPS in list_of_fips_codes:
-                cursor.execute("INSERT INTO state_11_ztrans_main (transid, fips, loanratetypestndcode, loanduedate) VALUES ({0}, {1}, {2}, {3})" .format(TransId, FIPS, LoanRateTypeStndCode, LoanDueDate))       #specify values to insert into table
+                cursor.execute("INSERT INTO state_11_ztrans_main (trans_id, fips, loanratetypestndcode, loanduedate) VALUES (%s, %s, %s, %s)", (TransId, FIPS, LoanRateTypeStndCode, LoanDueDate))       #specify values to insert into table
                 conn.commit()
 
 # this gives error "_csv.Error: line contains NULL byte"
 def use_csv_pkg(filename):
 
-    with codecs.open(filename, 'rb','utf-8') as csvfile:
-        reader = csv.reader(csvfile, delimiter='|')
-        try:
-            for row in reader:
-                print row
-
-        except csv.Error:
-            print 'choked on line'
-            pass
-
+    with open(filename) as infile:
+        for index, row in enumerate(infile):
+            print index
+            split_row = row.split('|')
+            print split_row[0]
+            print split_row[66] # this returns empty, which  i think will be ok for inserting into table
 
 # this fails on the 60,000th row
 def read_in_csv_data_in_chunks_and_write_to_new_csv(filename):
@@ -119,32 +190,32 @@ def read_in_csv_data_in_chunks_and_write_to_new_csv(filename):
         LoanRateTypeStndCode = row[2]
         LoanDueDate = row[3]
 
-    for chunk in chunks:
-        for index, row in chunk.iterrows():
-
-    for row in chunks:
-        TransId = row[0]
-        FIPS = row[1]
-        LoanRateTypeStndCode = row[2]
-        LoanDueDate = row[3]
-        #print index
-
-        # print TransId
-        # print FIPS
-        # print LoanRateTypeStndCode
-        # print LoanDueDate
-
-        if FIPS in list_of_fips_codes:
-            print row
-                print to_write
-                pandas.df.append(TransId, FIPS, LoanRateTypeStndCode, LoanDueDate)
-        print df
-        # pandas.df.to_csv('/Users/kristinadahl/Desktop/Union of Concerned Scientists/coastal_work/permanent_inundation/zillow/original_data/06/ZTrans/Main_FIPS.csv')
-        #         #datawriter.writerow([TransId, FIPS, LoanRateTypeStndCode, LoanDueDate])
-
-        del df
-        gc.collect()
-        del gc.garbage[:]
+    # for chunk in chunks:
+    #     for index, row in chunk.iterrows():
+    #
+    #         for row in chunks:
+    #             TransId = row[0]
+    #             FIPS = row[1]
+    #             LoanRateTypeStndCode = row[2]
+    #             LoanDueDate = row[3]
+    #             #print index
+    #
+    #             # print TransId
+    #             # print FIPS
+    #             # print LoanRateTypeStndCode
+    #             # print LoanDueDate
+    #
+    #             if FIPS in list_of_fips_codes:
+    #                 print row
+    #                 print to_write
+    #                 pandas.df.append(TransId, FIPS, LoanRateTypeStndCode, LoanDueDate)
+    #             print df
+    #             # pandas.df.to_csv('/Users/kristinadahl/Desktop/Union of Concerned Scientists/coastal_work/permanent_inundation/zillow/original_data/06/ZTrans/Main_FIPS.csv')
+    #             #         #datawriter.writerow([TransId, FIPS, LoanRateTypeStndCode, LoanDueDate])
+    #
+    #             del df
+    #             gc.collect()
+    #             del gc.garbage[:]
 
 def getstuff(filename):
     df_of_fips_codes = pandas.read_csv(
@@ -310,10 +381,12 @@ def geocode(state_numbers):
         null_rows_now_geocoded = null_rows.loc[null_rows['PropertyAddressLatitude'].notnull()]
         updated_datafile = pandas.concat([null_rows_now_geocoded, not_null_rows])
         updated_datafile.to_csv('/Users/kristinadahl/Desktop/Union of Concerned Scientists/coastal_work/permanent_inundation/zillow/state_{0}_clean_geocoded_data.csv' .format(state_number),sep=',',encoding='utf-8', index=False)
-read_in_csv_data_in_chunks_and_insert_rows('/Users/kristinadahl/Desktop/Union of Concerned Scientists/coastal_work/permanent_inundation/zillow/original_data/06/ZTrans/Main.txt')
+
+#create_tables('11')
+read_in_ztrans_main_csv_data_and_insert_rows('/Users/kristinadahl/Desktop/Union of Concerned Scientists/coastal_work/permanent_inundation/zillow/original_data/11/11/ZTrans/Main.txt')
 #read_in_csv_data_in_chunks_and_insert_rows('/Users/kristinadahl/Desktop/Union of Concerned Scientists/coastal_work/permanent_inundation/zillow/original_data/06/ZTrans/Main.txt')
-
-
+#use_csv_pkg('/Users/kristinadahl/Desktop/Union of Concerned Scientists/coastal_work/permanent_inundation/zillow/original_data/06/ZTrans/Main.txt')
+#create_tables('11')
 
 
 
