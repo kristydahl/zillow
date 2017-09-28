@@ -44,13 +44,17 @@ def create_tables(state_number):
         """
         CREATE TABLE state_{0}_ztrans_propinfo (
             transid TEXT NOT NULL,
-            importparcelid BIGINT NOT NULL
+            importparcelid BIGINT,
+            propertyaddressunitdesignator TEXT,
+            propertyaddressunitnumber TEXT,
+            propertysequencenumber INT
         ) WITH OIDS
         """ .format(state_number),
         """
         CREATE TABLE state_{0}_zasmt_buildingareas (
             rowid TEXT NOT NULL,
             buildingareasqft BIGINT,
+            buildingareastndcode TEXT,
             fips TEXT
         ) WITH OIDS
         """ .format(state_number),
@@ -67,7 +71,6 @@ def create_tables(state_number):
             propertyaddresslatitude TEXT,
             propertyaddresslongitude TEXT,
             taxamount NUMERIC
-            loadid BIGINT
         ) WITH OIDS
         """ .format(state_number),
         """
@@ -161,13 +164,26 @@ def read_ztrans_propinfo_csv_data_and_insert_rows(filename):
             split_row = row.split('|')
             TransId = int(split_row[0])
             ImportParcelId = split_row[64]
+            PropertySequenceNumber = split_row[46]
+            PropertyAddressUnitDesignator = split_row[48]
+            PropertyAddressUnitNumber = split_row[49]
 
             field = ImportParcelId
             ImportParcelId = check_if_field_is_null(field)
 
+            field = PropertySequenceNumber
+            PropertySequenceNumber = check_if_field_is_null(field)
+
+            field = PropertyAddressUnitDesignator
+            PropertyAddressUnitDesignator = check_if_field_is_null(field)
+
+            field = PropertyAddressUnitNumber
+            PropertyAddressUnitNumber = check_if_field_is_null(field)
+
+
             cursor.execute(
-                "INSERT INTO state_11_ztrans_propinfo (transid, importparcelid) VALUES (%s, %s)",
-                (TransId, ImportParcelId))
+                "INSERT INTO state_11_ztrans_propinfo (transid, importparcelid, propertysequencenumber, propertyaddressunitdesignator, propertyaddressunitnumber) VALUES (%s, %s, %s, %s, %s)",
+                (TransId, ImportParcelId, PropertySequenceNumber, PropertyAddressUnitDesignator, PropertyAddressUnitNumber))
             conn.commit()
 
     print 'Ztrans propinfo done'
@@ -198,7 +214,7 @@ def read_zasmt_main_csv_data_and_insert_rows(filename):
             PropertyAddressLatitude = split_row[81]
             PropertyAddressLongitude = split_row[82]
             TaxAmount = split_row[38]
-            LoadId = split_row[76]
+            LoadId = split_row[75]
 
             field = PropertyFullStreetAddress
             PropertyFullStreetAddress = check_if_field_is_null(field)
@@ -227,7 +243,7 @@ def read_zasmt_main_csv_data_and_insert_rows(filename):
             if FIPS in list_of_fips_codes:
                 cursor.execute("INSERT INTO state_11_zasmt_main (rowid, importparcelid, fips, propertyfullstreetaddress, propertycity, propertystate, propertyzip, propertyaddresslatitude, propertyaddresslongitude, taxamount, loadid"
                                ") "
-                               "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", (RowId, ImportParcelId, FIPS, PropertyFullStreetAddress, PropertyCity, PropertyState, PropertyZip, PropertyAddressLatitude, PropertyAddressLongitude, TaxAmount, LoadId))
+                               "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", (RowId, ImportParcelId, FIPS, PropertyFullStreetAddress, PropertyCity, PropertyState, PropertyZip, PropertyAddressLatitude, PropertyAddressLongitude, TaxAmount, LoadId))
                 conn.commit()
 
     print 'Zasmt main done'
@@ -352,15 +368,17 @@ def read_zasmt_buildingareas_csv_data_and_insert_rows(filename):
             RowId = split_row[0]
             BuildingAreaSqFt = split_row[4]
             FIPS = split_row[5]
+            BuildingAreaStndCode = split_row[3]
 
             field = BuildingAreaSqFt
             BuildingAreaSqFt = check_if_field_is_null(field)
 
             if FIPS in list_of_fips_codes:
-                cursor.execute("INSERT INTO state_11_zasmt_buildingareas (rowid, buildingareasqft, fips"
-                               ") "
-                               "VALUES (%s, %s, %s)", (RowId, BuildingAreaSqFt, FIPS))
-                conn.commit()
+                if BuildingAreaStndCode in['BAT','BAG']:
+                    cursor.execute("INSERT INTO state_11_zasmt_buildingareas (rowid, buildingareasqft, buildingareastndcode, fips"
+                                   ") "
+                                   "VALUES (%s, %s, %s, %s)", (RowId, BuildingAreaSqFt, BuildingAreaStndCode, FIPS))
+                    conn.commit()
     print 'Zasmt building areas done'
 
 def join_data():
@@ -370,35 +388,44 @@ def join_data():
     cursor = conn.cursor()
 
     # how can i best clean this up? will need to pass in state number for sure...how else?
-    cursor.execute("SELECT state_11_ztrans_main.trans_id, state_11_ztrans_main.fips, state_11_ztrans_main.loanratetypestndcode, state_11_ztrans_main.loanduedate, "
-                   "state_11_ztrans_propinfo.transid, state_11_ztrans_propinfo.importparcelid, "
-                   " state_11_zasmt_main.rowid, state_11_zasmt_main.importparcelid, state_11_zasmt_main.propertyfullstreetaddress, state_11_zasmt_main.propertycity, state_11_zasmt_main.propertystate, "
+    cursor.execute("DROP TABLE IF EXISTS temp_table;"
+                   "CREATE TEMP TABLE state_11_joined_data AS SELECT state_11_ztrans_main.trans_id, state_11_ztrans_main.fips, state_11_ztrans_main.loanratetypestndcode, state_11_ztrans_main.loanduedate, "
+                   "state_11_ztrans_propinfo.importparcelid, state_11_ztrans_propinfo.propertyaddressunitdesignator, state_11_ztrans_propinfo.propertyaddressunitnumber, "
+                   "state_11_ztrans_propinfo.propertysequencenumber, "
+                   "state_11_zasmt_main.rowid, state_11_zasmt_main.loadid, state_11_zasmt_main.propertyfullstreetaddress, state_11_zasmt_main.propertycity, state_11_zasmt_main.propertystate, "
                    "state_11_zasmt_main.propertyzip, state_11_zasmt_main.propertyaddresslatitude, state_11_zasmt_main.propertyaddresslongitude, state_11_zasmt_main.taxamount,"
-                   "state_11_zasmt_value.rowid, state_11_zasmt_value.totalassessedvalue, state_11_zasmt_value.assessmentyear, state_11_zasmt_value.totalmarketvalue, state_11_zasmt_value.marketvalueyear,"
+                   "state_11_zasmt_value.totalassessedvalue, state_11_zasmt_value.assessmentyear, state_11_zasmt_value.totalmarketvalue, state_11_zasmt_value.marketvalueyear,"
                    "state_11_zasmt_value.totalappraisalvalue, state_11_zasmt_value.appraisalvalueyear,"
-                   "state_11_zasmt_building.rowid, state_11_zasmt_building.noofunits, state_11_zasmt_building.buildingconditionstndcode, state_11_zasmt_building.foundationtypestndcode, state_11_zasmt_building.totalbedrooms,"
-                   "state_11_zasmt_building.propertylandusestndcode, state_11_zasmt_building.yearbuilt, state_11_zasmt_building.effectiveyearbuilt,"
-                   "state_11_zasmt_buildingareas.rowid, state_11_zasmt_buildingareas.buildingareasqft "
+                   "state_11_zasmt_building.noofunits, state_11_zasmt_building.buildingconditionstndcode, state_11_zasmt_building.foundationtypestndcode, state_11_zasmt_building.totalbedrooms,"
+                   "state_11_zasmt_building.propertylandusestndcode, state_11_zasmt_building.yearbuilt, state_11_zasmt_building.effectiveyearbuilt, "
+                   "state_11_zasmt_buildingareas.buildingareasqft, state_11_zasmt_buildingareas.buildingareastndcode "
                    "FROM state_11_ztrans_main INNER JOIN state_11_ztrans_propinfo on state_11_ztrans_main.trans_id = state_11_ztrans_propinfo.transid "
                    "INNER JOIN state_11_zasmt_main on state_11_zasmt_main.importparcelid = state_11_ztrans_propinfo.importparcelid "
                    "INNER JOIN state_11_zasmt_value on state_11_zasmt_value.rowid = state_11_zasmt_main.rowid "
                    "INNER JOIN state_11_zasmt_building on state_11_zasmt_building.rowid=state_11_zasmt_main.rowid "
-                   "INNER JOIN state_11_zasmt_buildingareas on state_11_zasmt_buildingareas.rowid=state_11_zasmt_main.rowid;")
+                   "INNER JOIN state_11_zasmt_buildingareas on state_11_zasmt_buildingareas.rowid=state_11_zasmt_main.rowid; "
+                    )
+    conn.commit()
 
-    head_rows = cursor.fetchmany(size=2)
-    x = cursor.fetchall()
-    print head_rows
+    # do i pipe this into a new table, then operate on that? or do all the operations i need to do (weed out dupes, geocode) on the result table, then pipe it out to a new table or csv?
 
-join_data()
+    # head_rows = cursor.fetchmany(size=10)
+    # x = cursor.fetchall()
+    # # #print head_rows[9]
+    # print len(x)
 
 
-#create_tables('11')
-#read_ztrans_main_csv_data_and_insert_rows('/Users/kristinadahl/Desktop/Union of Concerned Scientists/coastal_work/permanent_inundation/zillow/original_data/11/11/ZTrans/Main.txt')
-#read_ztrans_propinfo_csv_data_and_insert_rows('/Users/kristinadahl/Desktop/Union of Concerned Scientists/coastal_work/permanent_inundation/zillow/original_data/11/11/ZTrans/PropertyInfo.txt')
+
+
+# create_tables('11')
+# read_ztrans_main_csv_data_and_insert_rows('/Users/kristinadahl/Desktop/Union of Concerned Scientists/coastal_work/permanent_inundation/zillow/original_data/11/11/ZTrans/Main.txt')
+# read_ztrans_propinfo_csv_data_and_insert_rows('/Users/kristinadahl/Desktop/Union of Concerned Scientists/coastal_work/permanent_inundation/zillow/original_data/11/11/ZTrans/PropertyInfo.txt')
 # read_zasmt_main_csv_data_and_insert_rows('/Users/kristinadahl/Desktop/Union of Concerned Scientists/coastal_work/permanent_inundation/zillow/original_data/11/11/ZAsmt/Main.txt')
 # read_zasmt_value_csv_data_and_insert_rows('/Users/kristinadahl/Desktop/Union of Concerned Scientists/coastal_work/permanent_inundation/zillow/original_data/11/11/ZAsmt/Value.txt')
 # read_zasmt_building_csv_data_and_insert_rows('/Users/kristinadahl/Desktop/Union of Concerned Scientists/coastal_work/permanent_inundation/zillow/original_data/11/11/ZAsmt/Building.txt')
 # read_zasmt_buildingareas_csv_data_and_insert_rows('/Users/kristinadahl/Desktop/Union of Concerned Scientists/coastal_work/permanent_inundation/zillow/original_data/11/11/ZAsmt/BuildingAreas.txt')
+join_data()
+
 
 #read_in_csv_data_in_chunks_and_insert_rows('/Users/kristinadahl/Desktop/Union of Concerned Scientists/coastal_work/permanent_inundation/zillow/original_data/06/ZTrans/Main.txt')
 #use_csv_pkg('/Users/kristinadahl/Desktop/Union of Concerned Scientists/coastal_work/permanent_inundation/zillow/original_data/06/ZTrans/Main.txt')
