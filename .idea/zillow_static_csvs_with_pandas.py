@@ -100,7 +100,7 @@ def weed_out_dupes(state_number):
 def geocode(state_numbers):
     for state_number in state_numbers:
         datafile_no_dupes = weed_out_dupes(state_number)
-        api_key = 'AIzaSyD5oyVjuyaP-6UdEbbxw_sD-2UiNchUDFc'
+        api_key = X ## SPECIFY KEY HERE
 
         null_rows = datafile_no_dupes.loc[datafile_no_dupes['PropertyAddressLatitude'].isnull()]
         not_null_rows = datafile_no_dupes.loc[datafile_no_dupes['PropertyAddressLatitude'].notnull()]
