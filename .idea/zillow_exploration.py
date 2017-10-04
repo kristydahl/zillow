@@ -231,7 +231,7 @@ def read_ztrans_propinfo_csv_data_and_insert_rows(state_number):
 
     cursor.execute(
         "CREATE TABLE state_{0}_ztrans_propinfo_nodupes AS SELECT * FROM (SELECT row_number() OVER (PARTITION BY importparcelid ORDER BY loadid desc) AS rn , * "
-        "FROM state_11_ztrans_propinfo) AS SubQueryAlias WHERE rn = 1" .format(state_number))
+        "FROM state_{0}_ztrans_propinfo) AS SubQueryAlias WHERE rn = 1" .format(state_number))
 
     conn.commit()
 
@@ -466,20 +466,21 @@ def join_data(state_number):
                    "LEFT JOIN {3} on {2}.rowid = {3}.rowid "
                    "LEFT JOIN {4} on {3}.rowid = {4}.rowid; "
                     .format(asmt_table_to_create, zasmt_main, zasmt_value, zasmt_building, zasmt_buildingareas))
+    print 'Joined ZAsmt data'
 
     cursor.execute("CREATE TABLE {0} AS SELECT {1}.transid, {1}.importparcelid, {1}.propertyaddressunitdesignator, {1}.propertyaddressunitnumber, "
-                   "{2}.fips, state_11_ztrans_main.loadid, {2}.loanratetypestndcode, {2}.loanduedate, {1}.propertysequencenumber "
+                   "{2}.fips, {2}.loadid, {2}.loanratetypestndcode, {2}.loanduedate, {1}.propertysequencenumber "
                    "FROM {1} LEFT JOIN {2} on {2}.transid = {1}.transid; "
                    .format(trans_table_to_create, ztrans_propinfo, ztrans_main))
-
     conn.commit()
+    print 'Joined ZTrans data'
 
     cursor.execute("CREATE TABLE {0} AS SELECT {1}.*, {2}.propertyaddressunitdesignator, {2}.propertyaddressunitnumber, {2}.loanratetypestndcode, {2}.loanduedate, "
                    "{2}.propertysequencenumber "
                    "FROM {1} LEFT JOIN {2} on {2}.importparcelid = {1}.importparcelid; "
                    .format(joined_table_to_create, asmt_table_to_create, trans_table_to_create))
-
     conn.commit()
+    print 'Joined all data!'
 
 def delete_rows(state_number):
     # connect to db
@@ -500,7 +501,7 @@ def get_state_abbreviation(state_number):
 
         csvreader = csv.reader(csvfile, delimiter=',')
         for row in csvreader:
-            if row[0] == str(state_number):
+            if str(row[0]) == str(state_number):
                 state = str(row[1])
     print 'State is: ' + state
 
@@ -515,7 +516,7 @@ def update_state_field_if_null(state_number):
     state = get_state_abbreviation(state_number)
 
     # Update state field (make text file with state #, two-letter abbreviation
-    cursor.execute("SELECT * FROM state_11_joined_data WHERE propertystate IS NULL")
+    cursor.execute("SELECT * FROM state_{0}_joined_data WHERE propertystate IS NULL" .format(state_number))
     rows = cursor.fetchall()
     print 'There are ' + str(len(rows)) + ' to update with state name'
     cursor.execute("UPDATE state_{0}_joined_data SET propertystate = '{1}' WHERE propertystate IS NULL" .format(state_number, state))
@@ -544,7 +545,7 @@ def geocode_data(state_number):
     maps_key = keys['maps_key']
 
     # get the rows where latitude field is null, then geocode.
-    cursor.execute("SELECT * FROM state_11_joined_data WHERE propertyaddresslatitude IS NULL")
+    cursor.execute("SELECT * FROM state_{0}_joined_data WHERE propertyaddresslatitude IS NULL" .format(state_number))
     all_rows = cursor.fetchall()
 
     print 'There are: ' + str(len(all_rows)) + ' rows to update'
@@ -576,16 +577,17 @@ def geocode_data(state_number):
             print 'Updated lat and long'
     conn.commit()
 
+# After geocoding, can delete parcels where lat/long are still null ('location does not exist' from above)
 # Will need to select points only within state boundaries because a few locations get geocoded improperly and put in other states
 
-def vaccuum_anaylze_db():
+def vaccuum_anaylze_db(state_number):
     # connect to db
     conn_string = connect_to_db()
     conn = psycopg2.connect(conn_string)
     cursor = conn.cursor()
     old_isolation_level = conn.isolation_level
     conn.set_isolation_level(0)
-    cursor.execute("VACUUM ANALYZE state_11_joined_data")
+    cursor.execute("VACUUM ANALYZE state_{0}_joined_data" .format(state_number))
     conn.set_isolation_level(old_isolation_level)
 
 def clean_data(state_number):
@@ -600,7 +602,7 @@ def clean_data(state_number):
     update_state_field_if_null(state_number)
     geocode_data(state_number)
 
-clean_data(11)
+clean_data(06)
 
 
 

@@ -1,5 +1,7 @@
 #import arcpy
 
+# Select only properties that are within the state boundaries (gets rid of any properties in a state db that were mis-geocoded
+
 # Clip leveed areas out of properties files
 # def remove_properties_in_leveed_areas(state_numbers):
     # leveed_areas = [shapefile]
@@ -12,12 +14,12 @@
 # ID CI properties for each state, year, and projection
 # def identify_ci_properties(state_numbers, years, projection):
     # for state in state_numbers:
-        # properties = read in data file (shapefile of properties-nonleveed)
+        # properties = read in data file (shapefile or just table ? of properties-nonleveed)
 
         # for year in years:
             # inundated_area = shapefile (pass in state, year, projection}
             # outfile = ci_properties_state_{0}_{1}_{2} .format(state, year, projection)
-            # ci_properties = arcpy.SelectByLocation_managment(properties, inundated_area, "WITHIN") # check parameters here
+            # ci_properties = arcpy.SelectByLocation_management(properties, inundated_area, "WITHIN") # check parameters here
             # ci_properties.save(outfile)
 
 # Output state statistics for year, projection, number of CI properties, total value of CI properties
