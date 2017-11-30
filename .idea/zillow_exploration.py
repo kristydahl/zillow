@@ -7,14 +7,13 @@ import gc
 import codecs
 from datetime import datetime
 
+# Specify paths to data
 paths = pandas.read_csv('/Users/kristinadahl/Desktop/Union of Concerned Scientists/coastal_work/permanent_inundation/zillow/paths_to_data.csv', sep=',', header=None,dtype='str')
 
 folder_path = paths[0][0]
 data_path = paths[1][0]
 
-print folder_path
-print data_path
-
+# Connect to psql database
 def connect_to_db():
     with open(folder_path + 'db_config.csv') as config_file:
         csvreader = csv.reader(config_file, delimiter=',')
@@ -38,17 +37,13 @@ def connect_to_db():
     print "Connected!\n"
     return conn_string
 
+# Create tables to store ZTRAX data
 def create_tables(state_number):
     conn_string = connect_to_db()
 
     conn = psycopg2.connect(conn_string)
     cursor = conn.cursor()
 
-    # This chunk creates one table
-    # command = ("""CREATE TABLE state_{0}_ztrans_propinfo (
-    #                 transid TEXT NOT NULL,
-    #                 importparcelid BIGINT)
-    #                 WITH OIDS """ .format(state_number))
     commands = (
         """
         CREATE TABLE state_{0}_ztrans_main (
@@ -96,7 +91,9 @@ def create_tables(state_number):
             loadid BIGINT,
             propertyaddresslatitude TEXT,
             propertyaddresslongitude TEXT,
-            taxamount NUMERIC
+            taxamount NUMERIC,
+            created TIMESTAMP not null DEFAULT CURRENT_TIMESTAMP,
+            updated TIMESTAMP not null DEFAULT CURRENT_TIMESTAMP
         ) WITH OIDS
         """ .format(state_number),
         """
@@ -128,25 +125,21 @@ def create_tables(state_number):
         """ .format(state_number)
     )
 
-    #For one table:
-    # cursor.execute(command)
-    # cursor.close
-    # conn.commit()
-
     for command in commands:
         print command
         cursor.execute(command)
         cursor.close
         conn.commit()
 
-
+# Check if a field is null before inserting into database table
 def check_if_field_is_null(field):
         if field in['', '\x00',' ']:
             return None
         else:
             return field
 
-# WORKING!
+# Methods that insert Zillow data into database tables only insert properties located within coastal counties as determined by FIPS code
+# Read Ztrans main csv data and insert into database table
 def read_ztrans_main_csv_data_and_insert_rows(state_number):
     # connect to db
     conn_string = connect_to_db()
@@ -182,7 +175,7 @@ def read_ztrans_main_csv_data_and_insert_rows(state_number):
     print 'Ztrans main done'
 
 
-# ADD here and to table created above: PropertyAddressCensusTractAndBlock
+# Read Ztrans propertyinfo csv data and insert into database table
 def read_ztrans_propinfo_csv_data_and_insert_rows(state_number):
     # connect to db
     conn_string = connect_to_db()
@@ -237,7 +230,7 @@ def read_ztrans_propinfo_csv_data_and_insert_rows(state_number):
 
     print 'Ztrans propinfo done'
 
-# WORKING!
+# Read Zasmt main csv data and insert into database table
 def read_zasmt_main_csv_data_and_insert_rows(state_number):
     # connect to db
     conn_string = connect_to_db()
@@ -294,13 +287,17 @@ def read_zasmt_main_csv_data_and_insert_rows(state_number):
             PropertyHouseNumber = check_if_field_is_null(field)
 
             if FIPS in list_of_fips_codes:
-                cursor.execute("INSERT INTO state_%s_zasmt_main (rowid, importparcelid, fips, propertyhousenumber, propertyfullstreetaddress, propertycity, propertystate, propertyzip, propertyaddresslatitude, propertyaddresslongitude, taxamount, loadid"
+                cursor.execute("INSERT INTO state_%s_zasmt_main (rowid, importparcelid, fips, propertyhousenumber, propertyfullstreetaddress, propertycity, propertystate, "
+                               "propertyzip, propertyaddresslatitude, propertyaddresslongitude, taxamount, loadid"
                                ") "
-                               "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", (state_number, RowId, ImportParcelId, FIPS, PropertyHouseNumber, PropertyFullStreetAddress, PropertyCity, PropertyState, PropertyZip, PropertyAddressLatitude, PropertyAddressLongitude, TaxAmount, LoadId))
+                               "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", (state_number, RowId, ImportParcelId, FIPS, PropertyHouseNumber, PropertyFullStreetAddress,
+                                                                                           PropertyCity, PropertyState, PropertyZip, PropertyAddressLatitude, PropertyAddressLongitude,
+                                                                                           TaxAmount, LoadId))
                 conn.commit()
 
     print 'Zasmt main done'
-# WORKING!
+
+# Read Zasmt value csv data and insert into database table
 def read_zasmt_value_csv_data_and_insert_rows(state_number):
     # connect to db
     conn_string = connect_to_db()
@@ -351,6 +348,7 @@ def read_zasmt_value_csv_data_and_insert_rows(state_number):
                 conn.commit()
     print 'Zasmt value done'
 
+# Read Zasmt building csv data and insert into database table
 def read_zasmt_building_csv_data_and_insert_rows(state_number):
     # connect to db
     conn_string = connect_to_db()
@@ -406,6 +404,7 @@ def read_zasmt_building_csv_data_and_insert_rows(state_number):
                 conn.commit()
     print 'Zasmt building done'
 
+# Read Zasmt buildingareas csv data and insert into database table
 def read_zasmt_buildingareas_csv_data_and_insert_rows(state_number):
     # connect to db
     conn_string = connect_to_db()
@@ -419,6 +418,7 @@ def read_zasmt_buildingareas_csv_data_and_insert_rows(state_number):
 
     print 'Zasmt buildingareas starting'
     # read asmt_value csv file and insert rows into corresponding table
+    # only add rows that represent the total building area, as sometimes a property is listed multiple times based on different measures of building area
     with open(filename) as infile:
         for index, row in enumerate(infile):
             split_row = row.split('|')
@@ -431,7 +431,7 @@ def read_zasmt_buildingareas_csv_data_and_insert_rows(state_number):
             BuildingAreaSqFt = check_if_field_is_null(field)
 
             if FIPS in list_of_fips_codes:
-                if BuildingAreaStndCode in['BAT','BAG','BAE','BAF','BLF','BAJ']: # Reassess this based on zillow's code
+                if BuildingAreaStndCode in['BAT','BAG','BAE','BAF','BLF','BAJ']:
                     cursor.execute("INSERT INTO state_%s_zasmt_buildingareas (rowid, buildingareasqft, buildingareastndcode, fips"
                                    ") "
                                    "VALUES (%s, %s, %s, %s)" , (state_number, RowId, BuildingAreaSqFt, BuildingAreaStndCode, FIPS))
@@ -443,8 +443,8 @@ def join_data(state_number):
     conn_string = connect_to_db()
     conn = psycopg2.connect(conn_string)
     cursor = conn.cursor()
-    # # can also drop the joined_asmt and joined_trans tables to save space
 
+    # Specify names of tables to create
     asmt_table_to_create = 'state_' + str(state_number) + '_joined_asmt_data'
     trans_table_to_create = 'state_' + str(state_number) + '_joined_trans_data'
     joined_table_to_create = 'state_' + str(state_number) + '_joined_data'
@@ -455,8 +455,9 @@ def join_data(state_number):
     ztrans_main = 'state_' + str(state_number) + '_ztrans_main'
     ztrans_propinfo = 'state_' + str(state_number) + '_ztrans_propinfo_nodupes'
 
+    # Join Zasmt tables based on rowid
     cursor.execute("CREATE TABLE {0} AS SELECT {1}.rowid, {1}.loadid, {1}.importparcelid, {1}.propertyfullstreetaddress, {1}.propertycity, {1}.propertystate, "
-                   "{1}.propertyzip, {1}.propertyhousenumber, {1}.propertyaddresslatitude, {1}.propertyaddresslongitude, {1}.taxamount,"
+                   "{1}.propertyzip, {1}.propertyhousenumber, {1}.propertyaddresslatitude, {1}.propertyaddresslongitude, {1}.taxamount, {1}.created, {1}.updated, "
                    "{2}.totalassessedvalue, {2}.assessmentyear, {2}.totalmarketvalue, {2}.marketvalueyear,"
                    "{2}.totalappraisalvalue, {2}.appraisalvalueyear,"
                    "{3}.noofunits, {3}.buildingconditionstndcode, {3}.foundationtypestndcode, {3}.totalbedrooms,"
@@ -468,32 +469,54 @@ def join_data(state_number):
                     .format(asmt_table_to_create, zasmt_main, zasmt_value, zasmt_building, zasmt_buildingareas))
     print 'Joined ZAsmt data'
 
-    cursor.execute("CREATE TABLE {0} AS SELECT {1}.transid, {1}.importparcelid, {1}.propertyaddressunitdesignator, {1}.propertyaddressunitnumber, "
+    # Join Ztrans tables based on transid
+    cursor.execute("CREATE TABLE {0} AS SELECT {1}.transid, {1}.importparcelid, {1}.propertyaddressunitdesignator, {1}.propertyaddressunitnumber, {1}.propertyaddresscensustractandblock, "
                    "{2}.fips, {2}.loadid, {2}.loanratetypestndcode, {2}.loanduedate, {1}.propertysequencenumber "
                    "FROM {1} LEFT JOIN {2} on {2}.transid = {1}.transid; "
                    .format(trans_table_to_create, ztrans_propinfo, ztrans_main))
     conn.commit()
     print 'Joined ZTrans data'
 
+    # Join Ztrans and Zasmt tables based on importparcelid
     cursor.execute("CREATE TABLE {0} AS SELECT {1}.*, {2}.propertyaddressunitdesignator, {2}.propertyaddressunitnumber, {2}.loanratetypestndcode, {2}.loanduedate, "
-                   "{2}.propertysequencenumber "
+                   "{2}.propertysequencenumber, {2}.propertyaddresscensustractandblock "
                    "FROM {1} LEFT JOIN {2} on {2}.importparcelid = {1}.importparcelid; "
                    .format(joined_table_to_create, asmt_table_to_create, trans_table_to_create))
+
+    # Add geocoded field to joined data table
+    cursor.execute("ALTER TABLE {0} ADD geocoded TEXT;" .format(joined_table_to_create))
     conn.commit()
     print 'Joined all data!'
 
+# Delete rows that have no house number or existing latitude field (these cannot be accurately geocoded)
 def delete_rows(state_number):
     # connect to db
     conn_string = connect_to_db()
     conn = psycopg2.connect(conn_string)
     cursor = conn.cursor()
 
-    # delete rows that have no house number or latitude
     cursor.execute("DELETE FROM state_{0}_joined_data WHERE propertyhousenumber IS NULL and propertyaddresslatitude IS NULL; " .format(state_number))
     conn.commit()
 
     print 'Deleted rows'
 
+# Delete any duplicate rows from the joined data table based on whether they have the same rowid, importparcelid, and loadid, keeping the one with the highest buildingareasqft
+def delete_dupes_from_joined_data(state_numbers):
+    # connect to db
+    conn_string = connect_to_db()
+    conn = psycopg2.connect(conn_string)
+    cursor = conn.cursor()
+
+    for state_number in state_numbers:
+        cursor.execute("CREATE TABLE state_{0}_joined_data_nodupes AS SELECT * FROM (SELECT row_number() "
+                       "OVER (PARTITION BY rowid, importparcelid, loadid ORDER BY buildingareasqft desc) AS rn , * "
+                       "FROM state_{0}_joined_data) AS SubQueryAlias WHERE rn = 1;" .format(state_number))
+
+        conn.commit()
+        print 'Deleted dupes from state ' + str(state_number)
+
+
+# Get state abbreviation from state number
 def get_state_abbreviation(state_number):
     state_numbers_abbrs = '/Users/kristinadahl/Desktop/Union of Concerned Scientists/coastal_work/permanent_inundation/zillow/state_numbers_abbrs.csv'
 
@@ -507,6 +530,7 @@ def get_state_abbreviation(state_number):
 
     return(state)
 
+# Fill in state field with state abbreviation if state field is null
 def update_state_field_if_null(state_number):
     # connect to db
     conn_string = connect_to_db()
@@ -522,6 +546,7 @@ def update_state_field_if_null(state_number):
     cursor.execute("UPDATE state_{0}_joined_data SET propertystate = '{1}' WHERE propertystate IS NULL" .format(state_number, state))
     conn.commit()
 
+# Get api keys for geocoding
 def get_api_keys():
     keys_data = pandas.read_csv('/Users/kristinadahl/Desktop/Union of Concerned Scientists/coastal_work/permanent_inundation/zillow/google_api_keys.csv',header=0, delimiter=',')
     places_key = keys_data.iloc[0]['Places API key']
@@ -529,22 +554,22 @@ def get_api_keys():
 
     return{'places_key': places_key, 'maps_key': maps_key}
 
-
+# Geocode rows that have null latitude
 def geocode_data(state_number):
     # connect to db
     conn_string = connect_to_db()
     conn = psycopg2.connect(conn_string)
     cursor = conn.cursor()
 
-    delete_rows(state_number) # Remove comment tag when not testing
+    delete_rows(state_number)
 
-    update_state_field_if_null(state_number) # Remove comment tag when not testing
+    update_state_field_if_null(state_number)
 
     keys = get_api_keys()
     places_key = keys['places_key']
     maps_key = keys['maps_key']
 
-    # get the rows where latitude field is null, then geocode.
+    # get the rows where latitude field is null, then geocode
     cursor.execute("SELECT * FROM state_{0}_joined_data WHERE propertyaddresslatitude IS NULL" .format(state_number))
     all_rows = cursor.fetchall()
 
@@ -570,16 +595,57 @@ def geocode_data(state_number):
             geocoded_lat = json_response['results'][0]['geometry']['location']['lat']
             geocoded_long = json_response['results'][0]['geometry']['location']['lng']
             full_address = json_response['results'][0]['formatted_address']
-            city_new = (full_address.split(',')[1]).lstrip()
-            print 'Lat is: ' + str(geocoded_lat) + ' Long is: ' + str(geocoded_long) + ' City is: ' + city_new
+            print 'Lat is: ' + str(geocoded_lat) + ' Long is: ' + str(geocoded_long)
             cursor.execute("UPDATE state_%s_joined_data SET propertyaddresslatitude = '%s', propertyaddresslongitude = '%s' "
                            "WHERE importparcelid = %s" % (state_number, geocoded_lat, geocoded_long, importparcelid))
+            cursor.execute("UPDATE state_%s_joined_data SET geocoded = 'g'"
+                           "WHERE importparcelid = %s; " % (state_number, importparcelid))
+            conn.commit()
             print 'Updated lat and long'
+
+    # delete rows that still have no latitude
+    cursor.execute("DELETE FROM state_{0}_joined_data WHERE propertyaddresslatitude IS NULL; " .format(state_number))
     conn.commit()
 
-# After geocoding, can delete parcels where lat/long are still null ('location does not exist' from above)
-# Will need to select points only within state boundaries because a few locations get geocoded improperly and put in other states
+    print 'Deleted rows'
 
+# This method was used for one or two states for which the geocoded column wasn't created originally and is no longer part of the workflow
+def add_and_populate_geocoded_column(state_number):
+    # connect to db
+    conn_string = connect_to_db()
+    conn = psycopg2.connect(conn_string)
+    cursor = conn.cursor()
+
+    asmt_table = 'state_{0}_zasmt_main' .format(state_number)
+    joined_data_to_update = 'state_{0}_joined_data' .format(state_number)
+    cursor.execute("ALTER TABLE %s "
+                   "ADD geocoded TEXT;" % (joined_data_to_update))
+    conn.commit()
+    cursor.execute("SELECT * FROM %s " % (asmt_table))
+    all_rows = cursor.fetchall()
+
+    for row in all_rows:
+        importparcelid_asmt = row[2]
+        propertyaddresslatitude_asmt = row[10]
+
+        if propertyaddresslatitude_asmt is None:
+            cursor.execute("UPDATE state_%s_joined_data SET geocoded = 'g'"
+                   "WHERE importparcelid = %s; " % (state_number, importparcelid_asmt))
+            conn.commit()
+            print 'Updated row'
+
+# This little method can be altered to run any query. It is not part of the main workflow
+def run_sql_query():
+    # connect to db
+    conn_string = connect_to_db()
+    conn = psycopg2.connect(conn_string)
+    cursor = conn.cursor()
+
+    cursor.execute("ALTER TABLE state_6_joined_data_2 ADD geocoded TEXT")
+    conn.commit()
+    print 'ran query'
+
+# If the db gets corrupted or hung up in some way, this method may help fix it
 def vaccuum_anaylze_db(state_number):
     # connect to db
     conn_string = connect_to_db()
@@ -590,22 +656,23 @@ def vaccuum_anaylze_db(state_number):
     cursor.execute("VACUUM ANALYZE state_{0}_joined_data" .format(state_number))
     conn.set_isolation_level(old_isolation_level)
 
+# This is the master method to run all others.
 def clean_data(state_number):
     create_tables(state_number)
+    read_zasmt_main_csv_data_and_insert_rows(state_number)
     read_ztrans_main_csv_data_and_insert_rows(state_number)
     read_ztrans_propinfo_csv_data_and_insert_rows(state_number)
-    read_zasmt_main_csv_data_and_insert_rows(state_number)
     read_zasmt_value_csv_data_and_insert_rows(state_number)
     read_zasmt_building_csv_data_and_insert_rows(state_number)
     read_zasmt_buildingareas_csv_data_and_insert_rows(state_number)
     join_data(state_number)
+    delete_rows(state_number)
     update_state_field_if_null(state_number)
     geocode_data(state_number)
 
-clean_data(06)
-
-
-
+# clean_data(12)
+delete_dupes_from_joined_data([6])
+#run_sql_query()
 
 
 
