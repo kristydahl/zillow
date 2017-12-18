@@ -23,7 +23,6 @@ def connect_to_db():
             user = row[2]
             password = row[3]
 
-    #conn_string = "host='localhost' dbname='test_zillow' user='kristinadahl' password='latte4me'"
     conn_string = "host={0} dbname={1} user={2} password={3}" .format(host, dbname, user, password)
 
     # print the connection string we will use to connect
