@@ -12,6 +12,7 @@ arcpy.CheckOutExtension("Spatial")
 import sys
 reload(sys)
 sys.setdefaultencoding('utf8')
+import xlrd
 
 path_to_state_csvs = 'C:/Users/kristydahl/Desktop/GIS_data/zillow/state_property_csvs/'
 path_to_state_csvs_on_dropbox = 'C:/Users/kristydahl/Dropbox/zillow_data_on_dropbox/joined_data_csvs/'
@@ -292,7 +293,7 @@ def add_fields_to_geography_layer(years, projection, geography_type): # geograph
     arcpy.MakeFeatureLayer_management(file, 'layer')
 
     for year in years:
-        out_feature_class = '{0}_for_prop_analysis_{1}_{2}' .format(geography_type, year, projection)
+        out_feature_class = '{0}_for_prop_analysis_{1}_{2}_011618' .format(geography_type, year, projection)
         arcpy.CopyFeatures_management('layer',out_feature_class)
         out_feature_class_layer = arcpy.MakeFeatureLayer_management(out_feature_class, 'out_feature_class_layer')
         arcpy.AddField_management('out_feature_class_layer', "CIprop","LONG")
@@ -375,7 +376,11 @@ def output_statistics_by_geography_type(state_numbers, geography_type, years, pr
     # define csv file name, fields, etc.
     for state_number in state_numbers:
         print 'State number is: ' + state_number
-        state_number_inund = define_state_number_inund(state_number)
+        if state_number in ('1','6','9'):
+            state_number_inund = '0{0}' .format(state_number)
+        else:
+            state_number_inund = define_state_number_inund(state_number)
+        print 'State number inund is: ' + state_number_inund
         csv_filename = 'C:/Users/kristydahl/Desktop/GIS_data/zillow/{0}_statistics/state_{1}_ci_property_stats_{2}.csv'.format(
             geography_type, state_number_inund, projection)
 
@@ -383,7 +388,7 @@ def output_statistics_by_geography_type(state_numbers, geography_type, years, pr
         fieldnames = define_csv_fields_to_write_by_geography_type(geography_type)
         with open(csv_filename, 'wb') as csvfile:
             writer = csv.writer(csvfile)
-            writer.writerow(fieldnames)
+            writer.writerow(fieldnames) # uncomment when not testing
 
             for year in years:
                 print 'Year is ' + year
@@ -392,10 +397,15 @@ def output_statistics_by_geography_type(state_numbers, geography_type, years, pr
                 total_number_of_properties = int(arcpy.GetCount_management(fc).getOutput(0))
                 print total_number_of_properties
 
-                geography_file = '{0}s_for_prop_analysis_{1}_{2}'.format(geography_type, year, projection)  # update this when appropriate
+                geography_file = '{0}s_for_prop_analysis_{1}_{2}_011618'.format(geography_type, year, projection)  # update this when appropriate
                 geography_layer = arcpy.MakeFeatureLayer_management(geography_file, 'geography_layer')
 
-                arcpy.SelectLayerByLocation_management(geography_layer, "CONTAINS", fc)
+                if geography_type == 'state':
+                    select_state_query = "STATE_FIPS = '{0}' " .format(state_number_inund)
+                    print select_state_query
+                    arcpy.SelectLayerByAttribute_management(geography_layer, "NEW_SELECTION",  select_state_query)
+                else:
+                    arcpy.SelectLayerByLocation_management(geography_layer, "CONTAINS", fc)
                 geography_fields = define_fc_fields_for_geography_type(geography_type)
                 index_of_shape_field = len(geography_fields) - 1
 
@@ -466,13 +476,22 @@ def output_statistics_by_geography_type(state_numbers, geography_type, years, pr
                         total_tax = arcpy.da.TableToNumPyArray('output_table_total_tax', 'SUM_taxamount')[0][0]
 
                         # average year built
-                        if state_number == '22':
-                            arcpy.Statistics_analysis('fc', 'output_table_ave_yrbuilt', [["yearbuilt", "MEAN"]])  # changed to 2 for LA--need to change back
-                            ave_yrbuilt = arcpy.da.TableToNumPyArray('output_table_ave_yrbuilt', ["MEAN_yearbuilt"])[0][0]
-                        else:
-                            arcpy.Statistics_analysis('fc', 'output_table_ave_yrbuilt', [["yearbuilt", "MEAN"]])
-                            ave_yrbuilt = arcpy.da.TableToNumPyArray('output_table_ave_yrbuilt', ["MEAN_yearbuilt"])[0][0]
-                            print 'Ave yr built is ' + str(ave_yrbuilt)
+                        test = arcpy.Statistics_analysis('fc', 'output_table_ave_yrbuilt', [["yearbuilt", "MEAN"]])
+                        test_csv = arcpy.CopyRows_management(test, path_to_state_csvs + 'test_ave_yrbuilt_val.csv')
+                        df = pandas.read_csv(path_to_state_csvs + 'test_ave_yrbuilt_val.csv',delimiter=',')
+                        ave_yrbuilt = df.iloc[0]['MEAN_yearbuilt']
+                        print type(ave_yrbuilt)
+                        print ave_yrbuilt
+
+                        # ave_yrbuilt = arcpy.da.TableToNumPyArray('output_table_ave_yrbuilt', ["MEAN_yearbuilt"])[0][0]
+                        # print type(ave_yrbuilt)
+                        # ave_yrbuilt = int(ave_yrbuilt)
+                        # print 'Ave yr built is ' + str(ave_yrbuilt)
+                        #
+                        #
+                        # test_csv = arcpy.CopyRows_management(test, path_to_state_csvs + 'test_count_total_mark_val_0.csv')
+                        # df = pandas.read_csv(path_to_state_csvs + 'test_count_total_mark_val_0.csv', delimiter=',')
+                        # number_not_null = df.iloc[0]['COUNT_totalmarketvalue']
 
                         # total bedrooms
                         arcpy.Statistics_analysis('fc', 'output_table_total_beds', [["totalbedrooms", "SUM"]])
@@ -490,7 +509,7 @@ def output_statistics_by_geography_type(state_numbers, geography_type, years, pr
                             fc = arcpy.MakeFeatureLayer_management('ci_properties', 'notnull_ci_properties')
                             loanduedate_notnull = int(arcpy.GetCount_management(fc).getOutput(0))
                         else:
-                            loanduedate_notnull = 'null'
+                            loanduedate_notnull = 0
 
                         # get subset that are RI properties
                         # fc = select_residential_properties_and_save_as_fc(state_number, year, projection)
@@ -525,20 +544,20 @@ def output_statistics_by_geography_type(state_numbers, geography_type, years, pr
                         row[1] = total_ass_val
                         row[2] = total_mark_val
                         row[3] = total_tax
-                        row[3] = ave_ass_val
-                        row[4] = ave_mark_val
-                        row[5] = ave_yrbuilt # having trouble with field/data type
-                        row[6] = loanduedate_notnull
-                        #row[6] = 'null' #CA!
-                        row[7] = total_bedrooms
-                        row[8] = total_sqft
-                        row[9] = number_of_RI_properties
-                        row[10] = number_of_EXGD_properties
-                        row[11] = number_of_AV_properties
-                        row[12] = number_of_FRPRUN_properties
-                        row[13] = number_fdn_defined
-                        row[14] = number_of_safe_fdn_properties
-                        cursor.updateRow(row) # trouble writing to aveyearbuilt field for CA
+                        row[4] = ave_ass_val
+                        row[5] = ave_mark_val
+                        row[6] = ave_yrbuilt # having trouble with field/data type
+                        #row[6] = loanduedate_notnull
+                        row[7] = 'null' #CA!
+                        row[8] = total_bedrooms
+                        row[9] = total_sqft
+                        row[10] = number_of_RI_properties
+                        row[11] = number_of_EXGD_properties
+                        row[12] = number_of_AV_properties
+                        row[13] = number_of_FRPRUN_properties
+                        row[14] = number_fdn_defined
+                        row[15] = number_of_safe_fdn_properties
+                        #cursor.updateRow(row) # trouble writing to aveyearbuilt field for CA
 
                         # write to csv
                         if geography_type == 'state':
@@ -635,19 +654,109 @@ def organize_statistics_by_year_and_projection(state_numbers, years, projection,
     path = 'C:/Users/kristydahl/Desktop/GIS_data/zillow/{0}_statistics/' .format(geography_type)
     for year in years:
         csv_to_write = path + '{0}_statistics_{1}_{2}.csv' .format(geography_type, year, projection)
+        fieldnames = define_csv_fields_to_write_by_geography_type(geography_type)
         with open(csv_to_write, 'wb') as csvtowrite:
             writer = csv.writer(csvtowrite)
+            writer.writerow(fieldnames)
             for state_number in state_numbers:
                 csv_to_read = path + 'state_{0}_ci_property_stats_{1}.csv' .format(state_number, projection)
                 with open(csv_to_read, 'r') as csvtoread:
                     reader = csv.reader(csvtoread, delimiter=',')
                     for row in reader:
-                        print row
                         if row[0] == year:
                             writer.writerow(row)
                             print 'wrote {0} {1} to csv' .format(year, projection)
 
+# NOT WORKING YET
+def import_excel_tables_and_join_to_shapefiles(geography_type):
+    path = 'C:/Users/kristydahl/Desktop/GIS_data/zillow/{0}_statistics/' .format(geography_type)
+    excel_file = xlrd.open_workbook(path + 'zillow_{0}_stats_011018_nosummary.xlsx' .format(geography_type))
+    sheets = [sheet.name for sheet in excel_file.sheets()]
+    for sheet in sheets:
+        print sheet
+        name = sheet
+        name_nospace = name.replace(' ','_NCA')
+        out_table_name = '{0}_statistics_' .format(geography_type) + name_nospace
+        gdb = 'C:/Users/kristydahl/Desktop/GIS_data/zillow/zillow.gdb'
+        out_table = os.path.join(gdb, out_table_name)
+        print out_table
+        table = arcpy.ExcelToTable_conversion(excel_file, out_table, sheet)
+        print 'Converted sheet to table'
 
+def define_years_by_projection(projection):
+    if projection == 'NCAH':
+        years = ['2006','2030','2045','2060','2080','2100']
+    elif projection == 'NCAI':
+        years = ['2035','2060','2080','2100']
+    elif projection == 'NCAL':
+        years = ['2060','2080','2100']
+    return(years)
+
+def prep_shapefiles_for_writing_time_series_metrics(projections, geography_type, metric):
+    # specify geography shapefile
+    if geography_type == 'state':
+        geography_shapefile = 'states_for_testing_basic'
+    elif geography_type == 'congressional_district':
+        geography_shapefile = 'congressional_districts_with_names'
+    elif geography_type == 'zip_code':
+        geography_shapefile = 'zip_code_boundaries_clip_to_coasts'
+    for projection in projections:
+        years = define_years_by_projection(projection)
+        # copy geography shapefile so it's specific to this metric
+        shapefile_to_write = arcpy.CopyFeatures_management(geography_shapefile, geography_type + '_results_all_projections_' + metric)
+        for year in years:
+            arcpy.AddField_management(shapefile_to_write, year + '_' + projection)
+
+#untested
+def write_metrics_to_csvs(projection, geography_type, metric):
+    path_to_csvs = 'C:/Users/kristydahl/Desktop/GIS_data/zillow/{0}_statistics/' .format(geography_type)
+    dataframe = pandas.read_csv(path_to_csvs + 'coastal_' + geography_type + '_numbers.csv')
+    list_of_geographic_units = dataframe.loc[:,geography_type + '_number'].tolist()
+    dataframe_to_write = dataframe.set_index(geography_type + '_number')
+    years = define_years_by_projection(projection)
+
+    for geographic_unit in list_of_geographic_units:
+        print geographic_unit
+        for year in years:
+            csv_to_read = path_to_csvs + '{0}_statistics_{1}_{2}.csv' .format(geography_type, year, projection)
+            with open(csv_to_read, 'r') as csvtoread:
+                reader = csv.reader(csvtoread, delimiter=',')
+                for row in reader:
+                    if geography_type == 'state':
+                        geographic_unit_identifier = row[2] # may need to check leading zeros in pandas dataframe and here
+                        number_of_properties = row[3]
+                        assessed_value = row[4]
+                        market_value = row[5]
+                    elif geography_type == 'congressional_district':
+                        geographic_unit_identifier = str(row[2] + row[3]) # will need to check leading zeros for states and districts
+                        number_of_properties = row[6]
+                        assessed_value = row[7]
+                        market_value = row[8]
+                    elif geography_type == 'zip_code':
+                        geographic_unit_identifier = row[3] # may need to check leading zeros in pandas dataframe and here
+                        number_of_properties = row[4]
+                        assessed_value = row[5]
+                        market_value = row[6]
+                    if geographic_unit_identifier == geographic_unit:
+                        if metric == 'number':
+                            dataframe_to_write.at[geographic_unit, year + '_' + projection] = number_of_properties
+                        elif metric == 'assessed':
+                            dataframe_to_write.at[geographic_unit, year + '_' + projection] = assessed_value
+                        elif metric == 'market':
+                            dataframe_to_write.at[geographic_unit, year + '_' + projection] = market_value
+
+
+
+
+
+write_metrics_to_csvs('NCAH','state','number_ci_properties')
+
+
+    # for each unit in geography shapefile (use cursor), and for each year and projection, get the csv for that year and projection, and get metric for the right geographic unit
+
+
+
+#import_excel_tables_and_join_to_shapefiles('state')
 
 
 #strip_quotes('C:/Users/kristydahl/Desktop/GIS_data/zillow/state_property_csvs/test_state_36_sample_geocoded_geocodio_stripquotes.csv')
@@ -663,28 +772,19 @@ def organize_statistics_by_year_and_projection(state_numbers, years, projection,
 # SEQUENCE OF COMMANDS SET 3: IDENTIFY CI PROPERTIES. RUN IN ARCMAP
 #erase_properties_within_levees('6')
 #identify_ci_properties(['1','9','10','11','13','22','23','24','25','28','33','34','36','37','42','44','45','48','51'],'east_coast',['2060','2100'],'NCAL')
-#identify_ci_properties(['42'],'east_coast',['2100'],'NCAI')
-#identify_ci_properties_fl('12','east_coast',['2060','2100'],'NCAL')
 
 # SEQUENCE OF COMMANDS SET 3: FIRST TWO ONLY NEED TO BE RUN ONCE PER SCENARIO
-# add_fields_to_geography_layer(['2035','2060','2080','2100'],'NCAI','states')
-# add_fields_to_geography_layer(['2035','2060','2080','2100'],'NCAI','congressional_districts')
-# add_fields_to_geography_layer(['2035','2060','2080','2100'],'NCAI','zip_codes')
-# add_fields_to_geography_layer(['2060','2100'],'NCAL','states')
-# add_fields_to_geography_layer(['2060','2100'],'NCAL','congressional_districts')
-# add_fields_to_geography_layer(['2060','2100'],'NCAL','zip_codes')
 
-#output_statistics_by_geography_type(['44','45','48','51','53'],'state',['2035','2060','2080','2100'],'NCAI')
-# output_statistics_by_geography_type(['1','9','10','11','13','23','24','25','28','33','34','36','41','44','45','48','51'],'zip_code',['2035','2060','2080','2100'],'NCAI')
-# output_statistics_by_geography_type(['1','9','10','11','13','23','24','25','28','33','34','36','41','44','45','48','51'],'zip_code',['2060','2100'],'NCAL')
-# output_statistics_by_geography_type(['1','9','10','11','12','13','22','23','24','25','28','33','34','36','37','41','42','44','45','48','51','53'],'state',['2035','2060','2080','2100'],'NCAI')
-#output_statistics_by_geography_type(['42'],'state',['2006','2030','2045','2060','2080','2100'],'NCAH')
-# output_statistics_by_geography_type(['42'],'state',['2060','2100'],'NCAL')
-#output_statistics_by_geography_type(['12','22','37','42','53'],'zip_code',['2035','2060','2080','2100'], 'NCAI')
-#output_statistics_by_geography_type(['22','37','12'],'zip_code',['2060','2100'], 'NCAL')
-#    output_statistics_by_geography_type(['42'],'zip_code',['2006','2030','2045','2060','2080','2100'], 'NCAH')
-# need to do states 6 for CD (loandue), 36 (codec issue \xel?)
-#state_numbers = ['9','10','11','12','13','22','23','24','25','28','33','34','36','37','41','42','44','45','48','51','53']
+# add_fields_to_geography_layer(['2035','2060','2080','2100'],'NCAI','congressional_districts')
+# add_fields_to_geography_layer(['2006','2030','2045','2060','2080','2100'],'NCAH','congressional_districts')
+# add_fields_to_geography_layer(['2060','2100'],'NCAL','congressional_districts')
+
+#state_numbers = ['1','9','10','11','12','13','22','23','24','25','28','33','34','36','37','41','42','44','45','48','51','53']
+# state_numbers = ['1','9','10','33','34','36','37','41','42','44','45','48','51','53']
+# output_statistics_by_geography_type(['6'],'congressional_district',['2060','2100'],'NCAL')
+
+
+
 
 
 # for state_number in state_numbers:
@@ -697,19 +797,15 @@ def organize_statistics_by_year_and_projection(state_numbers, years, projection,
 
 #get_field_type(['10','45'])
 # rename_fields(['42'],['2006','2030','2045','2060','2080','2100'],'NCAH')
-# rename_fields(['42'],['2035','2060','2080','2100'],'NCAI')
-# rename_fields(['42'],['2060','2100'],'NCAL')
-# rename_fields(['42'],['2035','2060','2080','2100'],'NCAI')
-# rename_fields(['42'],['2006','2030','2045','2060','2080','2100'],'NCAH')
-# rename_fields(['42'],['2060','2100'],'NCAL')
-#rename_fields(['12'],['2100'],'NCAI ')
 
-state_numbers = ['1','09','10','11','12','13','22','23','24','25','28','33','34','36','37','41','42','44','45','48','51','53']
-organize_statistics_by_year_and_projection(state_numbers, ['2035','2060','2080','2100'],'NCAI','zip_code')
-organize_statistics_by_year_and_projection(state_numbers, ['2035','2060','2080','2100'],'NCAI','congressional_district')
-organize_statistics_by_year_and_projection(state_numbers, ['2006','2030','2045','2060','2080','2100'],'NCAH','state')
-organize_statistics_by_year_and_projection(state_numbers, ['2006','2030','2045','2060','2080','2100'],'NCAH','zip_code')
-organize_statistics_by_year_and_projection(state_numbers, ['2006','2030','2045','2060','2080','2100'],'NCAH','congressional_district')
-organize_statistics_by_year_and_projection(state_numbers, ['2060','2100'],'NCAL','state')
-organize_statistics_by_year_and_projection(state_numbers, ['2060','2100'],'NCAL','zip_code')
-organize_statistics_by_year_and_projection(state_numbers, ['2060','2100'],'NCAL','congressional_district')
+
+# state_numbers = ['01','06','09','10','11','12','13','22','23','24','25','28','33','34','36','37','41','42','44','45','48','51','53']
+# organize_statistics_by_year_and_projection(state_numbers, ['2035','2060','2080','2100'],'NCAI','state')
+# organize_statistics_by_year_and_projection(state_numbers, ['2035','2060','2080','2100'],'NCAI','zip_code')
+# organize_statistics_by_year_and_projection(state_numbers, ['2035','2060','2080','2100'],'NCAI','congressional_district')
+# organize_statistics_by_year_and_projection(state_numbers, ['2006','2030','2045','2060','2080','2100'],'NCAH','state')
+# organize_statistics_by_year_and_projection(state_numbers, ['2006','2030','2045','2060','2080','2100'],'NCAH','zip_code')
+# organize_statistics_by_year_and_projection(state_numbers, ['2006','2030','2045','2060','2080','2100'],'NCAH','congressional_district')
+# organize_statistics_by_year_and_projection(state_numbers, ['2060','2100'],'NCAL','state')
+# organize_statistics_by_year_and_projection(state_numbers, ['2060','2100'],'NCAL','zip_code')
+# organize_statistics_by_year_and_projection(state_numbers, ['2060','2100'],'NCAL','congressional_district')
