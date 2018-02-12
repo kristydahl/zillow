@@ -685,11 +685,11 @@ def import_excel_tables_and_join_to_shapefiles(geography_type):
 
 def define_years_by_projection(projection):
     if projection == 'NCAH':
-        years = ['2006','2030','2045','2060','2080','2100']
+        years = ['2006','2030','2045','2060','2080','2100'] #
     elif projection == 'NCAI':
         years = ['2035','2060','2080','2100']
     elif projection == 'NCAL':
-        years = ['2060','2080','2100']
+        years = ['2060','2100']
     return(years)
 
 def prep_shapefiles_for_writing_time_series_metrics(projections, geography_type, metric):
@@ -708,52 +708,135 @@ def prep_shapefiles_for_writing_time_series_metrics(projections, geography_type,
             arcpy.AddField_management(shapefile_to_write, year + '_' + projection)
 
 #untested
-def write_metrics_to_csvs(projection, geography_type, metric):
+def write_metrics_to_csvs(projections, geography_type, metric):
     path_to_csvs = 'C:/Users/kristydahl/Desktop/GIS_data/zillow/{0}_statistics/' .format(geography_type)
     dataframe = pandas.read_csv(path_to_csvs + 'coastal_' + geography_type + '_numbers.csv')
     list_of_geographic_units = dataframe.loc[:,geography_type + '_number'].tolist()
     dataframe_to_write = dataframe.set_index(geography_type + '_number')
-    years = define_years_by_projection(projection)
+    for projection in projections:
+        years = define_years_by_projection(projection)
 
-    for geographic_unit in list_of_geographic_units:
-        print geographic_unit
-        for year in years:
-            csv_to_read = path_to_csvs + '{0}_statistics_{1}_{2}.csv' .format(geography_type, year, projection)
-            with open(csv_to_read, 'r') as csvtoread:
-                reader = csv.reader(csvtoread, delimiter=',')
-                for row in reader:
-                    if geography_type == 'state':
-                        geographic_unit_identifier = row[2] # may need to check leading zeros in pandas dataframe and here
-                        number_of_properties = row[3]
-                        assessed_value = row[4]
-                        market_value = row[5]
-                    elif geography_type == 'congressional_district':
-                        geographic_unit_identifier = str(row[2] + row[3]) # will need to check leading zeros for states and districts
-                        number_of_properties = row[6]
-                        assessed_value = row[7]
-                        market_value = row[8]
-                    elif geography_type == 'zip_code':
-                        geographic_unit_identifier = row[3] # may need to check leading zeros in pandas dataframe and here
-                        number_of_properties = row[4]
-                        assessed_value = row[5]
-                        market_value = row[6]
-                    if geographic_unit_identifier == geographic_unit:
-                        if metric == 'number':
-                            dataframe_to_write.at[geographic_unit, year + '_' + projection] = number_of_properties
-                        elif metric == 'assessed':
-                            dataframe_to_write.at[geographic_unit, year + '_' + projection] = assessed_value
-                        elif metric == 'market':
-                            dataframe_to_write.at[geographic_unit, year + '_' + projection] = market_value
+        for geographic_unit in list_of_geographic_units:
+            if geography_type == 'state':
+                if geographic_unit in (1,6,9):
+                    geographic_unit_to_find = '0' + str(geographic_unit)
+                else:
+                    geographic_unit_to_find = str(geographic_unit)
+            if geography_type == 'zip_code':
+                if geographic_unit < 10000:
+                    geographic_unit_to_find = '0' + str(geographic_unit)
+                else:
+                    geographic_unit_to_find = str(geographic_unit)
+            if geography_type == 'congressional_district':
+                if geographic_unit < 1000:
+                    geographic_unit_to_find = '0' + str(geographic_unit)
+                else:
+                    geographic_unit_to_find = str(geographic_unit)
+            print 'geographic unit to find is: ' + str(geographic_unit_to_find)
+            for year in years:
+                csv_to_read = path_to_csvs + '{0}_statistics_{1}_{2}.csv' .format(geography_type, year, projection)
+                with open(csv_to_read, 'r') as csvtoread:
+                    reader = csv.reader(csvtoread, delimiter=',')
+                    for row in reader:
+                        if geography_type == 'state':
+                            geographic_unit_identifier = row[2]
+                            number_of_properties = row[3]
+                            assessed_value = row[4]
+                            market_value = row[5]
+                        elif geography_type == 'congressional_district':
+                            if len(str(row[2])) <2:
+                                state_number = '0' + str(row[2])
+                            else:
+                                state_number = str(row[2])
+                            if len(str(row[3])) < 2:
+                                district_number = '0' + str(row[3])
+                            else:
+                                district_number = str(row[3])
+                            geographic_unit_identifier = state_number + district_number # will need to check leading zeros for states and districts
+                            number_of_properties = row[6]
+                            assessed_value = row[7]
+                            market_value = row[8]
+                        elif geography_type == 'zip_code':
+                            geographic_unit_identifier = row[3] # may need to check leading zeros in pandas dataframe and here
+                            number_of_properties = row[4]
+                            assessed_value = row[5]
+                            market_value = row[6]
+                        #print 'geographic unit identifier is: ' + str(geographic_unit_identifier)
+                        if str(geographic_unit_identifier) == geographic_unit_to_find:
+                            print 'We have a match!'
+                            if metric == 'number':
+                                dataframe_to_write.at[geographic_unit, year + '_' + projection] = number_of_properties
+                            elif metric == 'assessed':
+                                dataframe_to_write.at[geographic_unit, year + '_' + projection] = assessed_value
+                            elif metric == 'market':
+                                dataframe_to_write.at[geographic_unit, year + '_' + projection] = market_value
+
+        dataframe_to_write.to_csv(path_to_csvs + '{0}_projections_{1}_time_series.csv' .format(geography_type, metric),sep=',')
+
+def create_state_fema_zones(region, state_numbers):
+    national_fema_layer = 'C:/Users/kristydahl/Desktop/GIS_data/FEMA_NFHL/NFHL_20171004/NFHL_20171004.gdb/S_Fld_Haz_Ar_coastal_A_V_zones'
+    path_to_state_boundaries = 'C:/Users/kristydahl/Dropbox/UCS permanent inundation data/permanent_inundation/{0}/{0}.gdb/' .format(region)
+    for state_number in state_numbers:
+        state_boundary = path_to_state_boundaries + 'tl_2016_{0}_cousub_clip_diss' .format(state_number)
+        outfile = 'state_{0}_fema_flood_zones' .format(state_number)
+        print 'Clipping FEMA layer to state ' + state_number
+        arcpy.Clip_analysis(national_fema_layer, state_boundary, outfile)
+        print 'Clipped FEMA laer to state ' + state_number
+
+# def properties_inside_outside_fema_zones(years, projection, state_numbers):
+#     path = 'C:/Users/kristydahl/Desktop/GIS_data/zillow/state_statistics/'
+#     csv_to_write = path + '{0}_statistics_{1}_{2}.csv'.format(geography_type, year, projection)
+#     fieldnames = define_csv_fields_to_write_by_geography_type(geography_type)
+#     with open(csv_to_write, 'wb') as csvtowrite:
+#         writer = csv.writer(csvtowrite)
+#         writer.writerow(fieldnames)
+#     for state in state_numbers:
+
+
+def rename_fcs():
+    files_to_rename = arcpy.ListFeatureClasses('*ci_properties_state*')
+    for fc in files_to_rename:
+        new_name = fc + '_with_unfilled_nulls'
+        arcpy.CopyFeatures_management(fc, new_name)
+
+def join_fips_to_ci_properties_layers(state_numbers):
+    for state_number in state_numbers:
+        ci_properties_layers = arcpy.ListFeatureClasses('ci_properties_state_{0}_2100_NCAL' .format(state_number))
+        importparcelid_fips_table_to_join = 'state_{0}_importparcelid_fips' .format(state_number)
+        fips_taxrate_avmv_table = 'ACS_2015_county_tax_rate'
+        for ci_properties_layer in ci_properties_layers:
+            if not ci_properties_layer.endswith('_with_unfilled_nulls'):
+                if not ci_properties_layer.endswith('_1'):
+                    if not ci_properties_layer.endswith('_2'):
+                        if not ci_properties_layer.endswith('_3'):
+                            print ci_properties_layer
+                            arcpy.JoinField_management(ci_properties_layer, 'importparcelid', importparcelid_fips_table_to_join, 'importparcelid',['fips_str'])
+                            print 'joined fips to ci properties layer'
+                            arcpy.JoinField_management(ci_properties_layer, 'fips_str', fips_taxrate_avmv_table, 'ACS_2015_5YR_COUNTY_GEOID')
+                            print 'joined tax/avmv table to ci properties layer'
+
+
+def delete_fields():
+    layers_to_check = arcpy.ListFeatureClasses('ci_properties_state_36*')
+    for layer in layers_to_check:
+        field_names = arcpy.ListFields(layer)
+        for name in field_names:
+            if name.name in('importparcelid_1','fips','fips_str','ACS_2015_5YR_COUNTY_STATEFP','ACS_2015_5YR_COUNTY_COUNTYFP','ACS_2015_5YR_COUNTY_COUNTYNS','ACS_2015_5YR_COUNTY_GEOID','ACS_2015_5YR_COUNTY_NAME','ACS_2015_5YR_COUNTY_NAMELSAD','ACS_2015_5YR_COUNTY_GEOID_Data','ACS_2015_5YR_COUNTY_tottaxpaid','X25_HOUSING_CHARACTERISTICS_B25001e1','X25_HOUSING_CHARACTERISTICS_B25077e1','X25_HOUSING_CHARACTERISTICS_B25079e1','X25_HOUSING_CHARACTERISTICS_B25090e1','taxperHU2','agtaxagval','AVMVratio'):
+                arcpy.DeleteField_management(layer,name.name)
+                print 'deleted ' + name.name + ' from ' + layer
+
+#delete_fields()
+#join_fips_to_ci_properties_layers(['9','22'])
+join_fips_to_ci_properties_layers(['36']) # need to do 36...make sure there's space!
+
+
+# create_state_fema_zones('east_coast',['10','11','12','13','22','23','24','25','28','33','34','36','37','42','44','45','48','51'])
+# create_state_fema_zones('west_coast',['06','41','53'])
 
 
 
-
-
-write_metrics_to_csvs('NCAH','state','number_ci_properties')
-
-
-    # for each unit in geography shapefile (use cursor), and for each year and projection, get the csv for that year and projection, and get metric for the right geographic unit
-
+# write_metrics_to_csvs(['NCAH','NCAI','NCAL'],'congressional_district','number')
+# write_metrics_to_csvs(['NCAH','NCAI','NCAL'],'zip_code','number')
 
 
 #import_excel_tables_and_join_to_shapefiles('state')
@@ -782,9 +865,6 @@ write_metrics_to_csvs('NCAH','state','number_ci_properties')
 #state_numbers = ['1','9','10','11','12','13','22','23','24','25','28','33','34','36','37','41','42','44','45','48','51','53']
 # state_numbers = ['1','9','10','33','34','36','37','41','42','44','45','48','51','53']
 # output_statistics_by_geography_type(['6'],'congressional_district',['2060','2100'],'NCAL')
-
-
-
 
 
 # for state_number in state_numbers:
